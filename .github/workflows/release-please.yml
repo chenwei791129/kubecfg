@@ -1,0 +1,73 @@
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+name: release-please
+
+jobs:
+  test:
+    permissions:
+      contents: read
+    uses: chenwei791129/.github/.github/workflows/go-test.yml@main
+    with:
+      vet: true
+      test-args: -v ./...
+
+  # Shared workflow: the pinned release-please SHA is maintained in
+  # chenwei791129/.github for every repository.
+  release-please:
+    needs: test
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    uses: chenwei791129/.github/.github/workflows/release-please.yml@main
+    with:
+      release-type: go
+
+  build-and-upload:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-26.04
+    strategy:
+      matrix:
+        include:
+          - {goos: linux, goarch: amd64, output: kubecfg-linux-amd64}
+          - {goos: linux, goarch: arm64, output: kubecfg-linux-arm64}
+          - {goos: darwin, goarch: amd64, output: kubecfg-darwin-amd64}
+          - {goos: darwin, goarch: arm64, output: kubecfg-darwin-arm64}
+          - {goos: windows, goarch: amd64, output: kubecfg-windows-amd64.exe}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: >-
+          go build -trimpath
+          -ldflags="-s -w -X main.version=${TAG_NAME}"
+          -o "${{ matrix.output }}" .
+
+      - name: Upload release asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: gh release upload "${TAG_NAME}" "${{ matrix.output }}" --clobber

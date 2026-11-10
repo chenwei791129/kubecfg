@@ -1,0 +1,19 @@
+name: Go Test
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # Shared workflow: pinned action SHAs are maintained in chenwei791129/.github.
+  test:
+    permissions:
+      contents: read
+    uses: chenwei791129/.github/.github/workflows/go-test.yml@main
+    with:
+      vet: true
+      test-args: -v ./...
